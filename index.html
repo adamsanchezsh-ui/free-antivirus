@@ -27,12 +27,13 @@ button:active{transform:scale(.97)}button.alt{background:rgba(255,255,255,.14);c
 button:disabled{opacity:.5}
 .item{padding:10px 0;border-top:1px solid rgba(255,255,255,.1);word-break:break-all;font-size:.92rem}
 .item b{color:var(--bad)}.ok{color:var(--ac);font-weight:600}.msg{color:var(--mut)}
+.src{margin-top:4px}.src small{color:var(--mut)}
 </style>
 </head>
 <body>
 <div class="wrap">
  <h1>🛡️ FreeAV</h1>
- <p class="sub">Zdarma antivirus nad ClamAV. Najde virus a odstraní ho.</p>
+ <p class="sub">Zdarma antivirus nad ClamAV. Najde virus, řekne odkud pochází a odstraní ho.</p>
  <div class="card">
   <label for="p">Složka nebo soubor ke kontrole</label>
   <input id="p" placeholder="např. ~/Downloads nebo C:\Users\Jmeno\Downloads">
@@ -55,6 +56,7 @@ button:disabled{opacity:.5}
 <script>
 const $=i=>document.getElementById(i);
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const src=o=>o&&o.site?`<div class="src">🌐 Staženo ze stránky: <b>${esc(o.site)}</b><br><small>${esc(o.url)}</small></div>`:'<div class="src msg">🌐 Původ neznámý (systém si nezaznamenal, odkud soubor přišel)</div>';
 async function api(url,body){
  const r=await fetch(url,{method:body?"POST":"GET",headers:{"X-FreeAV":"1","Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
  return r.json();
@@ -64,7 +66,7 @@ $("s").onclick=e=>run(e.target,async()=>{
  $("r").innerHTML='<span class="msg">Skenuji… může to chvíli trvat.</span>';
  const d=await api("/api/scan",{path:$("p").value.trim(),action:$("a").value});
  if(d.error){$("r").textContent=d.error;return}
- $("r").innerHTML=d.found.length?d.found.map(x=>`<div class="item"><b>${esc(x.virus)}</b><br>${esc(x.file)}<br>→ ${esc(x.status)}</div>`).join(""):'<span class="ok">✅ Nic nenalezeno, vše čisté.</span>';
+ $("r").innerHTML=d.found.length?d.found.map(x=>`<div class="item"><b>${esc(x.virus)}</b><br>${esc(x.file)}${src(x.origin)}<div class="src">→ ${esc(x.status)}</div></div>`).join(""):'<span class="ok">✅ Nic nenalezeno, vše čisté.</span>';
 });
 $("u").onclick=e=>run(e.target,async()=>{
  $("r").innerHTML='<span class="msg">Aktualizuji databázi…</span>';
@@ -73,7 +75,7 @@ $("u").onclick=e=>run(e.target,async()=>{
 });
 $("q").onclick=e=>run(e.target,async()=>{
  const d=await api("/api/quarantine");
- $("ql").innerHTML=d.items.length?d.items.map(x=>`<div class="item"><b>${esc(x.virus)}</b><br>${esc(x.file)}</div>`).join(""):'<p class="msg">Karanténa je prázdná.</p>';
+ $("ql").innerHTML=d.items.length?d.items.map(x=>`<div class="item"><b>${esc(x.virus)}</b><br>${esc(x.file)}${src(x.origin)}</div>`).join(""):'<p class="msg">Karanténa je prázdná.</p>';
 });
 $("c").onclick=e=>run(e.target,async()=>{
  if(!confirm("Trvale smazat vše v karanténě?"))return;

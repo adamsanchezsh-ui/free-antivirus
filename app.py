@@ -1,9 +1,10 @@
 """FreeAV - jednoduchý antivirus nad ClamAV s webovým rozhraním.
 Spuštění: python app.py  ->  http://127.0.0.1:8765
 """
-import json, os, shutil, subprocess, uuid
+import json, os, re, shutil, subprocess, sys, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlparse
 
 HOST, PORT = "127.0.0.1", 8765  # jen lokálně, nikdy ne do sítě
 Q = Path.home() / ".freeav_quarantine"
@@ -13,7 +14,35 @@ CLAM = shutil.which("clamscan")
 FRESH = shutil.which("freshclam")
 
 
-def remove(f, virus, action):
+def origin(f):
+    """Zjistí, z jaké stránky byl soubor stažen (pokud to systém zaznamenal).
+    Windows: Zone.Identifier, macOS: kMDItemWhereFroms, Linux: xattr."""
+    urls = []
+    try:
+        if os.name == "nt":
+            with open(f + ":Zone.Identifier", encoding="utf-8", errors="ignore") as z:
+                for line in z:
+                    if line.startswith(("HostUrl=", "ReferrerUrl=")):
+                        urls.append(line.split("=", 1)[1].strip())
+        elif sys.platform == "darwin":
+            out = subprocess.run(["mdls", "-raw", "-name", "kMDItemWhereFroms", f],
+                                 capture_output=True, text=True).stdout
+            urls = re.findall(r'"(https?://[^"]+)"', out)
+        else:
+            for k in ("user.xdg.origin.url", "user.xdg.referrer.url"):
+                try:
+                    urls.append(os.getxattr(f, k).decode())
+                except OSError:
+                    pass
+    except Exception:
+        pass
+    urls = [u for u in dict.fromkeys(urls) if u.startswith("http")]
+    if not urls:
+        return {"site": "", "url": ""}
+    return {"site": urlparse(urls[0]).hostname or "", "url": urls[0]}
+
+
+def remove(f, virus, action, org):
     try:
         if action == "delete":
             os.remove(f)
@@ -21,7 +50,8 @@ def remove(f, virus, action):
         qid = uuid.uuid4().hex
         shutil.move(f, Q / qid)
         os.chmod(Q / qid, 0o600)
-        (Q / (qid + ".json")).write_text(json.dumps({"file": f, "virus": virus}))
+        (Q / (qid + ".json")).write_text(
+            json.dumps({"file": f, "virus": virus, "origin": org}))
         return "v karanténě"
     except Exception as e:
         return f"nepodařilo se odstranit: {e}"
@@ -38,7 +68,9 @@ def scan(path, action):
     for line in p.stdout.splitlines():
         if line.endswith(" FOUND"):
             f, _, virus = line[:-6].rpartition(": ")
-            found.append({"file": f, "virus": virus, "status": remove(f, virus, action)})
+            org = origin(f)  # musí být před odstraněním souboru
+            found.append({"file": f, "virus": virus, "origin": org,
+                          "status": remove(f, virus, action, org)})
     if p.returncode == 2 and not found:
         return {"error": "Skenování selhalo: " + p.stderr.strip()[:300]}
     return {"found": found}
