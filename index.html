@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FreeAV – zdarma antivirus</title>
+<style>
+:root{--g1:#0f172a;--g2:#1e1b4b;--g3:#064e3b;--ac:#34d399;--bad:#f87171;--tx:#e2e8f0;--mut:#94a3b8}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;color:var(--tx);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+ background:linear-gradient(135deg,var(--g1),var(--g2),var(--g3));background-size:300% 300%;animation:bg 18s ease infinite;
+ padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
+@keyframes bg{50%{background-position:100% 100%}}
+.wrap{max-width:760px;margin:0 auto}
+h1{font-size:clamp(1.6rem,5vw,2.4rem);margin:.6em 0 .1em}
+.sub{color:var(--mut);margin:0 0 1.2em}
+.card{background:rgba(255,255,255,.07);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+ border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:18px;margin-bottom:16px}
+label{display:block;color:var(--mut);font-size:.85rem;margin:0 0 6px}
+input,select{width:100%;padding:13px;border-radius:12px;border:1px solid rgba(255,255,255,.2);
+ background:rgba(0,0,0,.3);color:var(--tx);font-size:1rem;margin-bottom:12px}
+select option{color:#000}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+button{flex:1 1 140px;padding:14px;border:0;border-radius:12px;font-size:1rem;font-weight:600;cursor:pointer;
+ color:#052e1f;background:var(--ac);transition:transform .1s}
+button:active{transform:scale(.97)}button.alt{background:rgba(255,255,255,.14);color:var(--tx)}
+button:disabled{opacity:.5}
+.item{padding:10px 0;border-top:1px solid rgba(255,255,255,.1);word-break:break-all;font-size:.92rem}
+.item b{color:var(--bad)}.ok{color:var(--ac);font-weight:600}.msg{color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="wrap">
+ <h1>🛡️ FreeAV</h1>
+ <p class="sub">Zdarma antivirus nad ClamAV. Najde virus a odstraní ho.</p>
+ <div class="card">
+  <label for="p">Složka nebo soubor ke kontrole</label>
+  <input id="p" placeholder="např. ~/Downloads nebo C:\Users\Jmeno\Downloads">
+  <label for="a">Co udělat s nalezeným virem</label>
+  <select id="a">
+   <option value="quarantine">Dát do karantény (bezpečné)</option>
+   <option value="delete">Smazat okamžitě</option>
+  </select>
+  <div class="row">
+   <button id="s">🔍 Skenovat</button>
+   <button id="u" class="alt">⬇️ Aktualizovat viry</button>
+  </div>
+ </div>
+ <div class="card" id="r"><span class="msg">Výsledky se zobrazí zde.</span></div>
+ <div class="card">
+  <div class="row"><button id="q" class="alt">📦 Karanténa</button><button id="c" class="alt">🗑️ Vysypat karanténu</button></div>
+  <div id="ql"></div>
+ </div>
+</div>
+<script>
+const $=i=>document.getElementById(i);
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+async function api(url,body){
+ const r=await fetch(url,{method:body?"POST":"GET",headers:{"X-FreeAV":"1","Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
+ return r.json();
+}
+async function run(btn,fn){btn.disabled=true;try{await fn()}catch(e){$("r").textContent="Chyba: "+e}btn.disabled=false}
+$("s").onclick=e=>run(e.target,async()=>{
+ $("r").innerHTML='<span class="msg">Skenuji… může to chvíli trvat.</span>';
+ const d=await api("/api/scan",{path:$("p").value.trim(),action:$("a").value});
+ if(d.error){$("r").textContent=d.error;return}
+ $("r").innerHTML=d.found.length?d.found.map(x=>`<div class="item"><b>${esc(x.virus)}</b><br>${esc(x.file)}<br>→ ${esc(x.status)}</div>`).join(""):'<span class="ok">✅ Nic nenalezeno, vše čisté.</span>';
+});
+$("u").onclick=e=>run(e.target,async()=>{
+ $("r").innerHTML='<span class="msg">Aktualizuji databázi…</span>';
+ const d=await api("/api/update",{});
+ $("r").innerHTML=d.error?esc(d.error):d.ok?'<span class="ok">✅ Databáze je aktuální.</span>':'<pre>'+esc(d.log)+'</pre>';
+});
+$("q").onclick=e=>run(e.target,async()=>{
+ const d=await api("/api/quarantine");
+ $("ql").innerHTML=d.items.length?d.items.map(x=>`<div class="item"><b>${esc(x.virus)}</b><br>${esc(x.file)}</div>`).join(""):'<p class="msg">Karanténa je prázdná.</p>';
+});
+$("c").onclick=e=>run(e.target,async()=>{
+ if(!confirm("Trvale smazat vše v karanténě?"))return;
+ const d=await api("/api/clear",{});$("ql").innerHTML='<p class="ok">Smazáno: '+d.deleted+'</p>';
+});
+</script>
+</body>
+</html>
